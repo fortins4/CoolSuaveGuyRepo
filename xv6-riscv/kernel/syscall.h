@@ -1,4 +1,4 @@
-// System call numbers
+// syscall numbers
 #define SYS_fork    1
 #define SYS_exit    2
 #define SYS_wait    3
@@ -21,3 +21,5 @@
 #define SYS_mkdir  20
 #define SYS_close  21
 #define SYS_getfilenum 22
+#define SYS_settickets  23
+#define SYS_getpinfo   24

@@ -5,6 +5,8 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "random.h"
+#include "pstat.h"
 
 struct cpu cpus[NCPU];
 
@@ -51,6 +53,10 @@ procinit(void)
   
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
+
+  // Initialize the random number generator
+  rand_init(12345); // You can replace 12345 with any seed of your choice
+
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->state = UNUSED;
@@ -111,6 +117,7 @@ allocproc(void)
 {
   struct proc *p;
 
+  // Loop through the process table looking for an UNUSED process.
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
     if(p->state == UNUSED) {
@@ -124,6 +131,10 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+
+  // Initialize fields after allocating the process.
+  p->tickets = 1; // Default ticket count
+  p->ticks = 0;   // Initial tick count
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -288,6 +299,9 @@ fork(void)
     return -1;
   }
 
+  // Set child tickets to inherit from the parent.
+  np->tickets = p->tickets;
+
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
@@ -302,7 +316,7 @@ fork(void)
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
-  // increment reference counts on open file descriptors.
+  // Increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
     if(p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
@@ -380,13 +394,12 @@ exit(int status)
 
   release(&wait_lock);
 
-  // Jump into the scheduler, never to return.
   sched();
   panic("zombie exit");
 }
 
-// Wait for a child process to exit and return its pid.
-// Return -1 if this process has no children.
+// child process exits and return pid
+// return -1 if no children
 int
 wait(uint64 addr)
 {
@@ -397,7 +410,7 @@ wait(uint64 addr)
   acquire(&wait_lock);
 
   for(;;){
-    // Scan through table looking for exited children.
+    // scan through table looking for exited children.
     havekids = 0;
     for(pp = proc; pp < &proc[NPROC]; pp++){
       if(pp->parent == p){
@@ -406,7 +419,6 @@ wait(uint64 addr)
 
         havekids = 1;
         if(pp->state == ZOMBIE){
-          // Found one.
           pid = pp->pid;
           if(addr != 0 && copyout(p->pagetable, addr, (char *)&pp->xstate,
                                   sizeof(pp->xstate)) < 0) {
@@ -423,7 +435,6 @@ wait(uint64 addr)
       }
     }
 
-    // No point waiting if we don't have any children.
     if(!havekids || killed(p)){
       release(&wait_lock);
       return -1;
@@ -441,52 +452,63 @@ wait(uint64 addr)
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
-void
-scheduler(void)
-{
+void scheduler(void) {
   struct proc *p;
   struct cpu *c = mycpu();
-
   c->proc = 0;
+
   for(;;){
-    // The most recent process to run may have had interrupts
-    // turned off; enable them to avoid a deadlock if all
-    // processes are waiting.
+    // enable interrupts to prevent deadlock
     intr_on();
 
+    int total_tickets = 0;
     int found = 0;
+
+    // calculate sum tickets across runnable processes
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
+        total_tickets += p->tickets;  // sum tickets for runnable processes
       }
       release(&p->lock);
     }
-    if(found == 0) {
-      // nothing to run; stop running on this core until an interrupt.
+
+    if (total_tickets > 0) {
+      // generate random lottery number
+      int winning_ticket = scaled_random(0, total_tickets - 1); // use scaled_random function
+
+      int current_ticket_sum = 0;
+
+      // select process with right ticket range
+      for(p = proc; p < &proc[NPROC]; p++) {
+        acquire(&p->lock);
+        if(p->state == RUNNABLE) {
+          current_ticket_sum += p->tickets;
+          if(current_ticket_sum > winning_ticket) {
+            p->state = RUNNING;
+            c->proc = p;
+            found = 1;
+
+            p->ticks++;
+            // context switch to process
+            swtch(&c->context, &p->context);
+            c->proc = 0;
+            release(&p->lock);
+            break;
+          }
+        }
+        release(&p->lock);
+      }
+    }
+
+    // no process - halt until next interrupt
+    if(!found) {
       intr_on();
       asm volatile("wfi");
     }
   }
 }
 
-// Switch to scheduler.  Must hold only p->lock
-// and have changed proc->state. Saves and restores
-// intena because intena is a property of this
-// kernel thread, not this CPU. It should
-// be proc->intena and proc->noff, but that would
-// break in the few places where a lock is held but
-// there's no process.
 void
 sched(void)
 {
@@ -507,7 +529,7 @@ sched(void)
   mycpu()->intena = intena;
 }
 
-// Give up the CPU for one scheduling round.
+// give up CPU for one round
 void
 yield(void)
 {
@@ -518,8 +540,6 @@ yield(void)
   release(&p->lock);
 }
 
-// A fork child's very first scheduling by scheduler()
-// will swtch to forkret.
 void
 forkret(void)
 {
@@ -535,26 +555,17 @@ forkret(void)
     fsinit(ROOTDEV);
 
     first = 0;
-    // ensure other cores see first=0.
+
     __sync_synchronize();
   }
 
   usertrapret();
 }
 
-// Atomically release lock and sleep on chan.
-// Reacquires lock when awakened.
 void
 sleep(void *chan, struct spinlock *lk)
 {
   struct proc *p = myproc();
-  
-  // Must acquire p->lock in order to
-  // change p->state and then call sched.
-  // Once we hold p->lock, we can be
-  // guaranteed that we won't miss any wakeup
-  // (wakeup locks p->lock),
-  // so it's okay to release lk.
 
   acquire(&p->lock);  //DOC: sleeplock1
   release(lk);
@@ -573,8 +584,8 @@ sleep(void *chan, struct spinlock *lk)
   acquire(lk);
 }
 
-// Wake up all processes sleeping on chan.
-// Must be called without any p->lock.
+// wake up all processes sleeping on chan.
+// must be called without any p->lock.
 void
 wakeup(void *chan)
 {
@@ -649,7 +660,7 @@ either_copyout(int user_dst, uint64 dst, void *src, uint64 len)
   }
 }
 
-// Copy from either a user address, or kernel address,
+// Copy from user address or kernel address,
 // depending on usr_src.
 // Returns 0 on success, -1 on error.
 int
@@ -698,18 +709,30 @@ int
 getfilenum(int pid)
 {
     struct proc *p;
-    int count = 0;  // initializes the count
+    int count = 0;
 
     for(p = proc; p < &proc[NPROC]; p++){
       if (p->pid == pid){
-      // count files
+      // count open files
         for (int i = 0; i < NOFILE; i++) {
-            if (p->ofile[i] != 0){  // if it's being used
+            if (p->ofile[i] != 0){
                 count++;
               }
       }
-      return count;  // returns count of files
+      return count;  // Return count of open files
       }
   }
-  return -1;
+  return -1;  // Return -1 if no files
+}
+
+int
+getpinfo(struct pstat *p){
+struct pstat pinfo;
+  for (int i = 0; i < NPROC; i++) {
+    pinfo.inuse[i] = (proc[i].state != UNUSED);
+    pinfo.tickets[i] = proc[i].tickets;
+    pinfo.pid[i] = proc[i].pid;
+    pinfo.ticks[i] = proc[i].ticks;
+  }
+  return either_copyout(1, (uint64) p, &pinfo, sizeof(struct pstat));;  // return  copyout
 }

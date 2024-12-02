@@ -6,8 +6,8 @@
 #include "proc.h"
 #include "syscall.h"
 #include "defs.h"
+#include "random.h"
 
-// Fetch the uint64 at addr from the current process.
 int
 fetchaddr(uint64 addr, uint64 *ip)
 {
@@ -102,9 +102,10 @@ extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_getfilenum(void);
+extern uint64 sys_settickets(void);
+extern uint64 sys_getpinfo(void);
 
-// An array mapping syscall numbers from syscall.h
-// to the function that handles the system call.
+// array mapping syscall numbers from syscall.h to sys call function
 static uint64 (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
 [SYS_exit]    sys_exit,
@@ -127,7 +128,9 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
-[SYS_getfilenum] sys_getfilenum,
+[SYS_getfilenum]   sys_getfilenum,
+[SYS_settickets] sys_settickets,
+[SYS_getpinfo] sys_getpinfo,
 };
 
 void
@@ -138,8 +141,7 @@ syscall(void)
 
   num = p->trapframe->a7;
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-    // Use num to lookup the system call function for num, call it,
-    // and store its return value in p->trapframe->a0
+    // use num to lookup system call function for num and store return value
     p->trapframe->a0 = syscalls[num]();
   } else {
     printf("%d %s: unknown sys call %d\n",

@@ -1,6 +1,7 @@
 struct stat;
+struct pstat;
 
-// system calls
+// sys calls
 int fork(void);
 int exit(int) __attribute__((noreturn));
 int wait(int*);
@@ -23,6 +24,8 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 int getfilenum(int);
+int settickets(int);
+int getpinfo(struct pstat*);
 
 // ulib.c
 int stat(const char*, struct stat*);
