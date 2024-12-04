@@ -27,3 +27,7 @@ random.c: added random number generator file.
 pstat.h: added pstat.h file to pass results to user space.
 
 getpinfo.c: created getpinfo file to display ticks and tickets for the user in - the command line.
+
+Proof it works:
+![image](https://github.com/user-attachments/assets/9f5bdbd6-2eea-4b3e-923b-10b7bee7a20c)
+
