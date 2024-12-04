@@ -4,7 +4,7 @@ Project 3: Lottery Scheduling - files updated:
 
 proc.h: added tickets and ticks to struct proc{}.
 
-proc.c: initiallized tickets and ticks in allocproc() function, child tickets are set to inherit from parents within function fork(), updated function to collect total in scheduler() function, generated a random number using scaled_random() function, and selected the winning process including the winning ticket.
+proc.c: initiallized tickets and ticks in allocproc() function, child tickets are set to inherit from parents in fork() function, updated to collect total in scheduler() function, generated a random number using scaled_random() function, and selected the winning process including the winning ticket.
 
 syscall.h: added getpinfo() and settickets() system call numbers.
 
