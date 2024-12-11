@@ -1,0 +1,24 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "cppdbg",
+      "request": "launch",
+      "args": [],
+      "stopAtEntry": false,
+      "externalConsole": true,
+      "cwd": "c:/Users/forti/OneDrive/Desktop/OS/CoolSuaveGuyRepo/Project0b-CircularQueue/Project0b-CircularQueue",
+      "program": "c:/Users/forti/OneDrive/Desktop/OS/CoolSuaveGuyRepo/Project0b-CircularQueue/Project0b-CircularQueue/build/Debug/outDebug",
+      "MIMode": "gdb",
+      "miDebuggerPath": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    }
+  ]
+}
